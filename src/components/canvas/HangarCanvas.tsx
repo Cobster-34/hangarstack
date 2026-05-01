@@ -71,13 +71,6 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
     })
   }
 
-  const handleStageDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
-    // Only update transform if the stage itself was dragged, not an aircraft
-    if (e.target !== stageRef.current) return
-    const stage = e.target as Konva.Stage
-    setTransform(t => ({ ...t, x: stage.x(), y: stage.y() }))
-  }
-
   const handleAircraftDragEnd = (e: Konva.KonvaEventObject<DragEvent>, p: AircraftPlacement) => {
     e.cancelBubble = true
     const node = e.target
@@ -109,32 +102,53 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
   }
 
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (!rotatingId) return
-    const stage = stageRef.current!
-    const pos = stage.getPointerPosition()!
-    const placement = state.placements.find(p => p.id === rotatingId)
-    if (!placement) return
-    const placementPx = {
-      x: ftToPx(placement.x_ft) * transform.scale + transform.x,
-      y: ftToPx(placement.y_ft) * transform.scale + transform.y,
+    if (rotatingId) {
+      const stage = stageRef.current!
+      const pos = stage.getPointerPosition()!
+      const placement = state.placements.find(p => p.id === rotatingId)
+      if (!placement) return
+      const placementPx = {
+        x: ftToPx(placement.x_ft) * transform.scale + transform.x,
+        y: ftToPx(placement.y_ft) * transform.scale + transform.y,
+      }
+      const currentAngle = Math.atan2(pos.y - placementPx.y, pos.x - placementPx.x) * 180 / Math.PI
+      let newRot = rotStartRot.current + (currentAngle - rotStartAngle.current)
+      if (e.evt.shiftKey) newRot = Math.round(newRot / 15) * 15
+      dispatch({
+        type: 'UPDATE_PLACEMENT',
+        placement: { ...placement, rotation_deg: newRot },
+      })
+      return
     }
-    const currentAngle = Math.atan2(pos.y - placementPx.y, pos.x - placementPx.x) * 180 / Math.PI
-    let newRot = rotStartRot.current + (currentAngle - rotStartAngle.current)
-    if (e.evt.shiftKey) newRot = Math.round(newRot / 15) * 15
-    dispatch({
-      type: 'UPDATE_PLACEMENT',
-      placement: { ...placement, rotation_deg: newRot },
-    })
+    if (isPanning.current) {
+      const dx = e.evt.clientX - panStart.current.x
+      const dy = e.evt.clientY - panStart.current.y
+      setTransform(t => ({ ...t, x: panStart.current.tx + dx, y: panStart.current.ty + dy }))
+    }
   }
 
   const handleStageMouseUp = () => {
+    isPanning.current = false
     if (!rotatingId) return
     const placement = state.placements.find(p => p.id === rotatingId)
     if (placement) onMovePlacement(placement.id, placement.x_ft, placement.y_ft, placement.rotation_deg)
     setRotatingId(null)
   }
 
-  const gridLines: React.ReactNode[] = []
+  const isPanning = useRef(false)
+  const panStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 })
+
+  const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Only pan when clicking directly on the stage background, not on aircraft
+    if (e.target !== stageRef.current) return
+    isPanning.current = true
+    panStart.current = {
+      x: e.evt.clientX,
+      y: e.evt.clientY,
+      tx: transform.x,
+      ty: transform.y,
+    }
+  }
   for (let x = 0; x <= activeHangar.width_ft; x += GRID_FT) {
     gridLines.push(
       <Line key={`gx${x}`}
@@ -166,7 +180,7 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
       style={{
         flex: 1, overflow: 'hidden', position: 'relative',
         background: 'var(--bg-base)',
-        cursor: rotatingId ? 'crosshair' : 'default',
+        cursor: rotatingId ? 'crosshair' : isPanning.current ? 'grabbing' : 'grab',
       }}
     >
       {/* Scale indicator */}
@@ -188,13 +202,12 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
         ref={stageRef}
         width={stageSize.width}
         height={stageSize.height}
-        draggable={!rotatingId}
         x={transform.x}
         y={transform.y}
         scaleX={transform.scale}
         scaleY={transform.scale}
         onWheel={handleWheel}
-        onDragEnd={handleStageDragEnd}
+        onMouseDown={handleStageMouseDown}
         onMouseMove={handleStageMouseMove}
         onMouseUp={handleStageMouseUp}
         onClick={(e) => {
