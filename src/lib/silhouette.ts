@@ -669,3 +669,4 @@ function taildragger(hw: number, hl: number, ws: number, ln: number): Silhouette
 
   return { fuselage, wingLeft, wingRight, stabLeft, stabRight, fin, nacelles: [], propDiscs }
 }
+// updated
