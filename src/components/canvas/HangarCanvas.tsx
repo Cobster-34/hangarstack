@@ -73,8 +73,8 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
         // Convert mouse delta from screen px to hangar feet
         const dx = (e.clientX - ds.mouseX) / t.scale
         const dy = (e.clientY - ds.mouseY) / t.scale
-        const newX = pxToFt(ds.acX + dx)
-        const newY = pxToFt(ds.acY + dy)
+        const newX = pxToFt(ds.acX) + pxToFt(dx)
+        const newY = pxToFt(ds.acY) + pxToFt(dy)
         const placement = placementsRef.current.find(p => p.id === ds.placementId)
         if (placement) {
           dispatch({ type: 'UPDATE_PLACEMENT', placement: { ...placement, x_ft: newX, y_ft: newY } })
