@@ -1,6 +1,6 @@
 // ─── Aircraft Types ──────────────────────────────────────────────────────────
 
-export type EngineType = 'Piston' | 'Turboprop' | 'Jet' | 'Electric' | 'Other'
+export type EngineType = 'Piston' | 'Turboprop' | 'Propjet' | 'Jet' | 'Electric' | 'Other'
 
 export type WeightClass = 'light' | 'medium' | 'heavy' | 'super'
 
