@@ -71,12 +71,6 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
     })
   }
 
-  const handleAircraftDragEnd = (e: Konva.KonvaEventObject<DragEvent>, p: AircraftPlacement) => {
-    e.cancelBubble = true
-    const node = e.target
-    onMovePlacement(p.id, pxToFt(node.x()), pxToFt(node.y()), p.rotation_deg)
-  }
-
   const handleAircraftClick = (p: AircraftPlacement) => {
     setContextMenu(null)
     dispatch({ type: 'SET_SELECTION', selection: { type: 'aircraft', id: p.aircraft_id } })
@@ -102,9 +96,11 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
   }
 
   const handleStageMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const stage = stageRef.current!
+    const pos = stage.getPointerPosition()!
+
+    // Rotation
     if (rotatingId) {
-      const stage = stageRef.current!
-      const pos = stage.getPointerPosition()!
       const placement = state.placements.find(p => p.id === rotatingId)
       if (!placement) return
       const placementPx = {
@@ -116,10 +112,28 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
       if (e.evt.shiftKey) newRot = Math.round(newRot / 15) * 15
       dispatch({
         type: 'UPDATE_PLACEMENT',
-        placement: { ...placement, rotation_deg: newRot },
+        placement: { ...state.placements.find(p => p.id === rotatingId)!, rotation_deg: newRot },
       })
       return
     }
+
+    // Aircraft drag
+    if (draggingId.current) {
+      const dx = pos.x - dragStart.current.mouseX
+      const dy = pos.y - dragStart.current.mouseY
+      const newX = pxToFt(dragStart.current.acX + dx)
+      const newY = pxToFt(dragStart.current.acY + dy)
+      const placement = state.placements.find(p => p.id === draggingId.current)
+      if (placement) {
+        dispatch({
+          type: 'UPDATE_PLACEMENT',
+          placement: { ...placement, x_ft: newX, y_ft: newY },
+        })
+      }
+      return
+    }
+
+    // Panning
     if (isPanning.current) {
       const dx = e.evt.clientX - panStart.current.x
       const dy = e.evt.clientY - panStart.current.y
@@ -128,18 +142,26 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
   }
 
   const handleStageMouseUp = () => {
+    // Save aircraft final position to DB
+    if (draggingId.current) {
+      const placement = state.placements.find(p => p.id === draggingId.current)
+      if (placement) onMovePlacement(placement.id, placement.x_ft, placement.y_ft, placement.rotation_deg)
+      draggingId.current = null
+    }
     isPanning.current = false
-    if (!rotatingId) return
-    const placement = state.placements.find(p => p.id === rotatingId)
-    if (placement) onMovePlacement(placement.id, placement.x_ft, placement.y_ft, placement.rotation_deg)
-    setRotatingId(null)
+    if (rotatingId) {
+      const placement = state.placements.find(p => p.id === rotatingId)
+      if (placement) onMovePlacement(placement.id, placement.x_ft, placement.y_ft, placement.rotation_deg)
+      setRotatingId(null)
+    }
   }
 
   const isPanning = useRef(false)
   const panStart = useRef({ x: 0, y: 0, tx: 0, ty: 0 })
+  const draggingId = useRef<string | null>(null)
+  const dragStart = useRef({ mouseX: 0, mouseY: 0, acX: 0, acY: 0 })
 
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    // Only pan when clicking directly on the stage background, not on aircraft
     if (e.target !== stageRef.current) return
     isPanning.current = true
     panStart.current = {
@@ -147,6 +169,20 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
       y: e.evt.clientY,
       tx: transform.x,
       ty: transform.y,
+    }
+  }
+
+  const handleAircraftMouseDown = (e: Konva.KonvaEventObject<MouseEvent>, p: AircraftPlacement) => {
+    if (rotatingId) return
+    e.cancelBubble = true
+    draggingId.current = p.id
+    const stage = stageRef.current!
+    const pos = stage.getPointerPosition()!
+    dragStart.current = {
+      mouseX: pos.x,
+      mouseY: pos.y,
+      acX: ftToPx(p.x_ft),
+      acY: ftToPx(p.y_ft),
     }
   }
   for (let x = 0; x <= activeHangar.width_ft; x += GRID_FT) {
@@ -313,11 +349,10 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
                 x={ftToPx(p.x_ft)}
                 y={ftToPx(p.y_ft)}
                 rotation={p.rotation_deg}
-                draggable={!rotatingId}
+                draggable={false}
                 onClick={() => handleAircraftClick(p)}
                 onContextMenu={(e) => handleAircraftRightClick(e, p)}
-                onDragStart={(e) => { e.cancelBubble = true }}
-                onDragEnd={(e) => handleAircraftDragEnd(e, p)}
+                onMouseDown={(e) => handleAircraftMouseDown(e, p)}
               >
                 {/* Clearance zone */}
                 <Rect
