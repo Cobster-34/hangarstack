@@ -5,17 +5,21 @@ import { useAppState } from '../../lib/AppContext'
 import { ftToPx, pxToFt } from '../../lib/clearance'
 import { STATUS_CONFIG } from '../../lib/constants'
 import { generateSilhouette, detectArchetype } from '../../lib/silhouette'
-import type { AircraftPlacement } from '../../types'
+import { AircraftContextMenu } from './AircraftContextMenu'
+import type { AircraftPlacement, AircraftStatus } from '../../types'
 
 interface HangarCanvasProps {
   onMovePlacement: (id: string, x: number, y: number, rot: number) => void
+  onRemovePlacement: (id: string) => void
+  onUpdateStatus: (aircraftId: string, status: AircraftStatus) => void
+  onUpdateDispatchOrder: (placementId: string, order: number | null) => void
 }
 
 const GRID_FT = 10
 const MIN_SCALE = 0.2
 const MAX_SCALE = 4
 
-export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
+export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatus, onUpdateDispatchOrder }: HangarCanvasProps) {
   const { state, dispatch, activeHangar } = useAppState()
   const stageRef = useRef<Konva.Stage>(null)
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 })
@@ -23,6 +27,9 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
   const [rotatingId, setRotatingId] = useState<string | null>(null)
   const rotStartAngle = useRef<number>(0)
   const rotStartRot = useRef<number>(0)
+  const [contextMenu, setContextMenu] = useState<{
+    placement: AircraftPlacement; x: number; y: number
+  } | null>(null)
 
   const containerCallback = useCallback((node: HTMLDivElement | null) => {
     if (!node) return
@@ -65,16 +72,26 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
   }
 
   const handleStageDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    // Only update transform if the stage itself was dragged, not an aircraft
+    if (e.target !== stageRef.current) return
     const stage = e.target as Konva.Stage
     setTransform(t => ({ ...t, x: stage.x(), y: stage.y() }))
   }
 
   const handleAircraftDragEnd = (e: Konva.KonvaEventObject<DragEvent>, p: AircraftPlacement) => {
+    e.cancelBubble = true
     const node = e.target
     onMovePlacement(p.id, pxToFt(node.x()), pxToFt(node.y()), p.rotation_deg)
   }
 
   const handleAircraftClick = (p: AircraftPlacement) => {
+    setContextMenu(null)
+    dispatch({ type: 'SET_SELECTION', selection: { type: 'aircraft', id: p.aircraft_id } })
+  }
+
+  const handleAircraftRightClick = (e: Konva.KonvaEventObject<PointerEvent>, p: AircraftPlacement) => {
+    e.evt.preventDefault()
+    setContextMenu({ placement: p, x: e.evt.clientX, y: e.evt.clientY })
     dispatch({ type: 'SET_SELECTION', selection: { type: 'aircraft', id: p.aircraft_id } })
   }
 
@@ -141,6 +158,8 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
     state.violations.flatMap(v => [v.placement_id_a, v.placement_id_b ?? ''])
   )
 
+  const nextDispatchOrder = Math.max(0, ...state.placements.map(p => p.dispatch_order ?? 0)) + 1
+
   return (
     <div
       ref={containerCallback}
@@ -150,6 +169,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
         cursor: rotatingId ? 'crosshair' : 'default',
       }}
     >
+      {/* Scale indicator */}
       <div style={{
         position: 'absolute', bottom: 16, left: 16, zIndex: 10,
         background: 'var(--bg-raised)', border: '1px solid var(--border)',
@@ -161,7 +181,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
         <span style={{ color: 'var(--border-strong)' }}>·</span>
         <span>{Math.round(transform.scale * 100)}%</span>
         <span style={{ color: 'var(--border-strong)' }}>·</span>
-        <span style={{ color: 'var(--text-muted)' }}>scroll=zoom  drag=pan  click+drag ↻=rotate  ⇧=snap 15°</span>
+        <span style={{ color: 'var(--text-muted)' }}>scroll=zoom · drag=pan · right-click=menu · drag ↻=rotate · ⇧=snap</span>
       </div>
 
       <Stage
@@ -180,9 +200,11 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
         onClick={(e) => {
           if (e.target === e.currentTarget) {
             dispatch({ type: 'SET_SELECTION', selection: { type: null, id: null } })
+            setContextMenu(null)
           }
         }}
       >
+        {/* Floor + grid layer */}
         <Layer>
           <Rect x={0} y={0} width={W} height={D}
             fill="#0d1117"
@@ -245,6 +267,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
           })}
         </Layer>
 
+        {/* Aircraft layer */}
         <Layer>
           {state.placements.map(p => {
             if (!p.aircraft) return null
@@ -279,6 +302,8 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
                 rotation={p.rotation_deg}
                 draggable={!rotatingId}
                 onClick={() => handleAircraftClick(p)}
+                onContextMenu={(e) => handleAircraftRightClick(e, p)}
+                onDragStart={(e) => { e.cancelBubble = true }}
                 onDragEnd={(e) => handleAircraftDragEnd(e, p)}
               >
                 {/* Clearance zone */}
@@ -322,7 +347,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
                   />
                 ))}
 
-                {/* Tail number label */}
+                {/* Tail number */}
                 <Text
                   text={ac.tail_number}
                   x={-hw + 2} y={-7}
@@ -331,7 +356,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
                   fontFamily="DM Mono, monospace"
                 />
 
-                {/* Model label */}
+                {/* Model */}
                 <Text
                   text={`${ac.manufacturer} ${ac.model}`.substring(0, 16)}
                   x={-hw + 2} y={6}
@@ -340,7 +365,7 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
                   fontFamily="DM Mono, monospace"
                 />
 
-                {/* Dispatch order */}
+                {/* Dispatch order badge */}
                 {p.dispatch_order !== null && (
                   <Group x={hw - 16} y={-hl + 4}>
                     <Rect x={0} y={0} width={14} height={14}
@@ -398,6 +423,20 @@ export function HangarCanvas({ onMovePlacement }: HangarCanvasProps) {
           })}
         </Layer>
       </Stage>
+
+      {/* Context menu — rendered outside Stage so it's a normal DOM element */}
+      {contextMenu && (
+        <AircraftContextMenu
+          placement={contextMenu.placement}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onRemove={(id) => { onRemovePlacement(id); setContextMenu(null) }}
+          onStatusChange={(aircraftId, status) => { onUpdateStatus(aircraftId, status); setContextMenu(null) }}
+          onSetDispatch={(placementId, order) => { onUpdateDispatchOrder(placementId, order); setContextMenu(null) }}
+          nextDispatchOrder={nextDispatchOrder}
+        />
+      )}
     </div>
   )
 }
