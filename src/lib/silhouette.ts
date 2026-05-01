@@ -52,7 +52,7 @@ export function detectArchetype(
   if (engine_type === 'Jet') return 'jet'
 
   // Turboprops
- if (engine_type === 'Turboprop') {
+if (engine_type === 'Turboprop' || engine_type === 'Turboprop') {
     // Twin turboprops have wider wingspan relative to length
     if (wingspan_ft > 50) return 'turboprop_twin'
     return 'turboprop_single'
