@@ -13,6 +13,7 @@ function AppInner() {
   const {
     movePlacement,
     addAircraftToHangar,
+    removePlacement,
     updateAircraftStatus,
     updateDispatchOrder,
     reload,
@@ -52,7 +53,12 @@ function AppInner() {
         />
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <HangarCanvas onMovePlacement={movePlacement} />
+          <HangarCanvas
+            onMovePlacement={movePlacement}
+            onRemovePlacement={removePlacement}
+            onUpdateStatus={updateAircraftStatus}
+            onUpdateDispatchOrder={updateDispatchOrder}
+          />
           <ViolationsPanel />
         </div>
       </div>

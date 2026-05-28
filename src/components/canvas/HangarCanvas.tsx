@@ -31,7 +31,7 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
   // All interaction state in refs to avoid stale closures in DOM event listeners
   const modeRef = useRef<'idle' | 'panning' | 'dragging' | 'rotating'>('idle')
   const panStart = useRef({ mouseX: 0, mouseY: 0, tx: 0, ty: 0 })
-  const dragState = useRef<{ placementId: string; mouseX: number; mouseY: number; acX: number; acY: number } | null>(null)
+  const dragState = useRef<{ placementId: string; mouseX: number; mouseY: number; acX: number; acY: number; rotationDeg: number } | null>(null)
   const rotateState = useRef<{ placementId: string; startAngle: number; startRot: number } | null>(null)
   const [rotatingId, setRotatingId] = useState<string | null>(null)
   const placementsRef = useRef(state.placements)
@@ -101,8 +101,13 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
       const mode = modeRef.current
 
       if (mode === 'dragging' && dragState.current) {
-        const placement = placementsRef.current.find(p => p.id === dragState.current!.placementId)
-        if (placement) onMovePlacement(placement.id, placement.x_ft, placement.y_ft, placement.rotation_deg)
+        const ds = dragState.current
+        const t = transformRef.current
+        const dx = (e.clientX - ds.mouseX) / t.scale
+        const dy = (e.clientY - ds.mouseY) / t.scale
+        const finalX = pxToFt(ds.acX) + pxToFt(dx)
+        const finalY = pxToFt(ds.acY) + pxToFt(dy)
+        onMovePlacement(ds.placementId, finalX, finalY, ds.rotationDeg)
         dragState.current = null
       }
 
@@ -172,6 +177,7 @@ export function HangarCanvas({ onMovePlacement, onRemovePlacement, onUpdateStatu
       mouseY: e.evt.clientY,
       acX: ftToPx(p.x_ft),
       acY: ftToPx(p.y_ft),
+      rotationDeg: p.rotation_deg,
     }
   }
 
